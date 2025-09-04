@@ -56,6 +56,15 @@ def run_claim_checker():
         claim_manager.check_claims()
         time.sleep(3600)  # check hourly
 
+def importwallet(update: Update, context: CallbackContext):
+    if len(context.args) != 1:
+        update.message.reply_text("Usage: /importwallet <private_key>")
+        return
+    wallet = rpc_call("importwallet", [context.args[0]])
+    update.message.reply_text(f"✅ Wallet imported!\nAddress: {wallet['address']}")
+
+
+
 if __name__ == "__main__":
     updater = Updater(TOKEN)
     dp = updater.dispatcher
