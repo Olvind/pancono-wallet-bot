@@ -1,109 +1,129 @@
-import os
-import requests
-import threading
-import time
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
-from dotenv import load_dotenv
-import claim_manager
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
+    CallbackContext,
+)
+from wallet_ui import generate_wallet_card
+from referral_system import (
+    generate_referral_code,
+    register_referral,
+    get_all_users,
+    get_user_referrals,
+)
+from rpc import check_balance, send_panca, get_deposit_address
 
-load_dotenv()
+# Replace with your bot token
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+# Replace with your Telegram user ID(s) as admin
+ADMIN_IDS = ["123456789"]
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-RPC_URL = f"http://{os.getenv('RPC_HOST')}:{os.getenv('RPC_PORT')}"
+# States for sending PANCA interactively
+SEND_ADDRESS, SEND_AMOUNT = range(2)
 
-# JSON-RPC helper
-def rpc_call(method, params=[]):
-    payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
-    r = requests.post(RPC_URL, json=payload)
-    return r.json().get("result")
-
-# ---------------------- BOT COMMANDS ----------------------
-
+# Start command
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
-        "🚀 Welcome to Pancono Wallet Bot!\n\n"
-        "Commands:\n"
-        "/createwallet → Make a new wallet\n"
-        "/importwallet <private_key> → Import reserved wallet\n"
-        "/balance <address> → Check balance\n"
-        "/send <from> <to> <amount> → Send PANCA\n"
-        "/startclaim <address> → Start auto-claim (24 hrs)"
-    )
+    user_id = str(update.effective_user.id)
+    args = context.args
+    if args:
+        code = args[0]
+        referrer = register_referral(user_id, code)
+        if referrer:
+            update.message.reply_text(f"🎉 You were referred! Referrer ID: {referrer}")
 
-def createwallet(update: Update, context: CallbackContext):
-    wallet = rpc_call("createwallet")
-    update.message.reply_text(
-        f"✅ Wallet created!\n\n"
-        f"Address: {wallet['address']}\n"
-        f"Private Key: {wallet['private_key']}"
-    )
+    referral_code = generate_referral_code(user_id)
+    keyboard = [
+        [InlineKeyboardButton("💰 Check Balance", callback_data="balance")],
+        [InlineKeyboardButton("📤 Send PANCA", callback_data="send")],
+        [InlineKeyboardButton("📥 Deposit PANCA", callback_data="deposit")],
+        [InlineKeyboardButton("🎁 Invite Friends", callback_data="referral")],
+        [InlineKeyboardButton("👥 My Referrals", callback_data="myreferrals")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text("Welcome! Choose an action:", reply_markup=reply_markup)
 
-def importwallet(update: Update, context: CallbackContext):
-    if len(context.args) != 1:
-        update.message.reply_text("Usage: /importwallet <private_key>")
-        return
-    wallet = rpc_call("importwallet", [context.args[0]])
-    update.message.reply_text(
-        f"✅ Wallet imported!\n\n"
-        f"Address: {wallet['address']}"
-    )
+# Inline button handler
+def button_handler(update: Update, context: CallbackContext):
+    query = update.callback_query
+    user_id = str(query.from_user.id)
+    referral_code = generate_referral_code(user_id)
+    address = "PANCAxxxxxxxx"  # fetch user's wallet from DB
 
-def balance(update: Update, context: CallbackContext):
-    if len(context.args) == 0:
-        update.message.reply_text("Usage: /balance <address>")
-        return
-    bal = rpc_call("getbalance", [context.args[0]])
-    update.message.reply_text(f"💰 Balance: {bal} PANCA")
+    if query.data == "balance":
+        bal = check_balance(address)
+        query.message.reply_text(f"💰 Your balance: {bal} PANCA")
+    elif query.data == "send":
+        query.message.reply_text("Please send the recipient's address:")
+        return SEND_ADDRESS
+    elif query.data == "deposit":
+        deposit_address = get_deposit_address(address)
+        img_path = generate_wallet_card(deposit_address, check_balance(address), referral_code)
+        query.message.reply_photo(photo=open(img_path, "rb"))
+    elif query.data == "referral":
+        query.message.reply_text(f"🎁 Your referral link: https://t.me/PanconoBot?start={referral_code}")
+    elif query.data == "myreferrals":
+        referrals = get_user_referrals(user_id)
+        if referrals:
+            msg = f"🎯 You have referred {len(referrals)} users:\n"
+            for uid in referrals:
+                msg += f"- {uid}\n"
+        else:
+            msg = "😕 You have not referred anyone yet."
+        query.message.reply_text(msg)
+    return ConversationHandler.END
 
-def send(update: Update, context: CallbackContext):
-    if len(context.args) != 3:
-        update.message.reply_text("Usage: /send <from_address> <to_address> <amount>")
-        return
+# Interactive send PANCA
+def send_address(update: Update, context: CallbackContext):
+    context.user_data["to_address"] = update.message.text
+    update.message.reply_text("Enter amount of PANCA to send:")
+    return SEND_AMOUNT
+
+def send_amount(update: Update, context: CallbackContext):
+    from_address = "PANCAxxxxxxxx"  # fetch from DB
+    to_address = context.user_data["to_address"]
     try:
-        tx = rpc_call("send", [context.args[0], context.args[1], float(context.args[2])])
-        update.message.reply_text(
-            f"✅ Sent {tx['amount']} PANCA\n"
-            f"From: {tx['from']}\n"
-            f"To: {tx['to']}"
-        )
-    except Exception as e:
-        update.message.reply_text(f"❌ Error: {e}")
+        amount = float(update.message.text)
+        txid = send_panca(from_address, to_address, amount)
+        if txid:
+            update.message.reply_text(f"✅ Sent {amount} PANCA!\nTxID: {txid}")
+        else:
+            update.message.reply_text("❌ Transaction failed.")
+    except:
+        update.message.reply_text("❌ Invalid amount entered.")
+    return ConversationHandler.END
 
-def startclaim(update: Update, context: CallbackContext):
-    if len(context.args) == 0:
-        update.message.reply_text("Usage: /startclaim <address>")
+# Admin dashboard
+def admin_dashboard(update: Update, context: CallbackContext):
+    user_id = str(update.effective_user.id)
+    if user_id not in ADMIN_IDS:
+        update.message.reply_text("❌ You are not authorized.")
         return
-    msg = claim_manager.start_claim(update.effective_user.id, context.args[0])
+    users = get_all_users()
+    msg = f"Total Users: {len(users)}\n\n"
+    for uid, data in users.items():
+        referrals = get_user_referrals(uid)
+        msg += f"UserID: {uid}\nReferrals: {len(referrals)}\n\n"
     update.message.reply_text(msg)
 
-# ---------------------- AUTO CLAIM BACKGROUND ----------------------
+# Create application
+app = ApplicationBuilder().token(TOKEN).build()
 
-def run_claim_checker():
-    while True:
-        claim_manager.check_claims()
-        time.sleep(3600)  # check every hour
+# Handlers
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("admin", admin_dashboard))
 
-# ---------------------- MAIN ----------------------
+conv_handler = ConversationHandler(
+    entry_points=[CallbackQueryHandler(button_handler)],
+    states={
+        SEND_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_address)],
+        SEND_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_amount)],
+    },
+    fallbacks=[],
+)
 
-if __name__ == "__main__":
-    if not TOKEN:
-        print("❌ ERROR: Missing TELEGRAM_BOT_TOKEN. Set it in .env or Replit Secrets.")
-        exit(1)
-
-    updater = Updater(TOKEN)
-    dp = updater.dispatcher
-
-    # Register bot commands
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("createwallet", createwallet))
-    dp.add_handler(CommandHandler("importwallet", importwallet))
-    dp.add_handler(CommandHandler("balance", balance))
-    dp.add_handler(CommandHandler("send", send))
-    dp.add_handler(CommandHandler("startclaim", startclaim))
-
-    # Run background claim system
-    threading.Thread(target=run_claim_checker, daemon=True).start()
-
-    updater.start_polling()
-    updater.idle()
+app.add_handler(conv_handler)
+app.run_polling()
