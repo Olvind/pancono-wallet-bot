@@ -1,31 +1,22 @@
-from flask import Flask, request, jsonify
-from pancono import blockchain
+import requests, json
 
-app = Flask(__name__)
+RPC_URL = "http://localhost:8332"  # replace with your RPC server URL
+RPC_USER = "rpcuser"
+RPC_PASS = "rpcpass"
 
-@app.route("/", methods=["POST"])
-def rpc():
-    data = request.get_json()
-    method = data.get("method")
-    params = data.get("params", [])
-    response = {"jsonrpc": "2.0", "id": data.get("id", 1)}
+def rpc_request(method, params=None):
+    headers = {"Content-Type": "application/json"}
+    payload = {"jsonrpc": "2.0","id":1,"method":method,"params":params or []}
+    response = requests.post(RPC_URL, auth=(RPC_USER, RPC_PASS), headers=headers, data=json.dumps(payload))
+    return response.json()
 
-    try:
-        if method == "getbalance":
-            response["result"] = blockchain.get_balance(params[0])
-        elif method == "send":
-            response["result"] = blockchain.send(params[0], params[1], params[2])
-        elif method == "createwallet":
-            response["result"] = blockchain.create_wallet()
-        elif method == "importwallet":
-            response["result"] = blockchain.import_wallet(params[0])
+def check_balance(address):
+    result = rpc_request("getbalance", [address])
+    return result.get("result", 0)
 
-        else:
-            response["error"] = "Unknown method"
-    except Exception as e:
-        response["error"] = str(e)
+def send_panca(from_address, to_address, amount):
+    result = rpc_request("sendtoaddress", [from_address, to_address, amount])
+    return result.get("result", None)
 
-    return jsonify(response)
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8332)
+def get_deposit_address(address):
+    return address
