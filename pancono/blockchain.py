@@ -1,43 +1,70 @@
-import uuid
+import json
+import logging
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+from wallet_ui import generate_wallet_card
+from referral_system import process_referral, reward_referral
+from rpc import generate_wallet, get_balance
 
-# In-memory wallet storage
-# Example structure:
-# wallets = {
-#   "PANCAabcd1234": {"balance": 100.0, "private_key": "xyz123"}
-# }
-wallets = {}
+logging.basicConfig(level=logging.INFO)
 
-# ---------------------- CREATE WALLET ----------------------
-def create_wallet():
-    address = "PANCA" + str(uuid.uuid4())[:8]
-    private_key = str(uuid.uuid4()).replace("-", "")
-    wallets[address] = {"balance": 0.0, "private_key": private_key}
-    return {"address": address, "private_key": private_key}
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
 
-# ---------------------- IMPORT WALLET ----------------------
-def import_wallet(private_key):
-    # 1. If private_key already exists → return existing wallet
-    for addr, data in wallets.items():
-        if data["private_key"] == private_key:
-            return {"address": addr, "private_key": private_key}
+DATABASE_FILE = "database.json"
 
-    # 2. Otherwise → create a new address based on key
-    address = "PANCA" + private_key[:8]
-    wallets[address] = {"balance": 0.0, "private_key": private_key}
-    return {"address": address, "private_key": private_key}
+# Load or create database
+def load_db():
+    try:
+        with open(DATABASE_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
-# ---------------------- BALANCE ----------------------
-def get_balance(address):
-    return wallets.get(address, {}).get("balance", 0.0)
+def save_db(db):
+    with open(DATABASE_FILE, "w") as f:
+        json.dump(db, f, indent=4)
 
-# ---------------------- SEND ----------------------
-def send(sender, recipient, amount):
-    if sender not in wallets or recipient not in wallets:
-        raise Exception("Invalid address")
+db = load_db()
 
-    if wallets[sender]["balance"] < amount:
-        raise Exception("Insufficient funds")
+def start(update: Update, context: CallbackContext):
+    user_id = str(update.message.from_user.id)
+    user = db.get(user_id)
 
-    wallets[sender]["balance"] -= amount
-    wallets[recipient]["balance"] += amount
-    return {"from": sender, "to": recipient, "amount": amount}
+    # If new user, create a wallet
+    if not user:
+        wallet_info = generate_wallet()
+        user = {
+            "address": wallet_info["address"],
+            "private_key": wallet_info["private_key"],
+            "referrals": [],
+            "last_claim": None
+        }
+        db[user_id] = user
+        save_db(db)
+
+    referral_code = process_referral(user_id, context.args if context.args else None)
+    keyboard = [[InlineKeyboardButton("Wallet Card", callback_data="wallet_card")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        f"Welcome to Pancono Wallet!\nYour referral code: {referral_code}",
+        reply_markup=reply_markup
+    )
+
+def button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    user_id = str(query.from_user.id)
+
+    if query.data == "wallet_card":
+        card = generate_wallet_card(db[user_id]["address"])
+        query.message.reply_photo(photo=card)
+
+def main():
+    updater = Updater(TOKEN)
+    updater.dispatcher.add_handler(CommandHandler("start", start))
+    updater.dispatcher.add_handler(CallbackQueryHandler(button))
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == "__main__":
+    main()
