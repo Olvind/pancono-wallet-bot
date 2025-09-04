@@ -14,6 +14,18 @@ def load_db():
     with open(DB_FILE, "r") as f:
         return json.load(f)
 
+def get_all_users():
+    db = load_db()
+    return db["users"]
+
+def get_user_referrals(user_id):
+    db = load_db()
+    if user_id in db["users"]:
+        code = db["users"][user_id]["referral_code"]
+        return db["referrals"].get(code, [])
+    return []
+
+
 def save_db(db):
     with open(DB_FILE, "w") as f:
         json.dump(db, f, indent=2)
