@@ -1,22 +1,31 @@
-import requests, json
+# rpc.py
+import random
 
-RPC_URL = "http://localhost:8332"  # replace with your RPC server URL
-RPC_USER = "rpcuser"
-RPC_PASS = "rpcpass"
-
-def rpc_request(method, params=None):
-    headers = {"Content-Type": "application/json"}
-    payload = {"jsonrpc": "2.0","id":1,"method":method,"params":params or []}
-    response = requests.post(RPC_URL, auth=(RPC_USER, RPC_PASS), headers=headers, data=json.dumps(payload))
-    return response.json()
+# Mock RPC for testing without a real blockchain
+WALLETS = {}  # {address: balance}
 
 def check_balance(address):
-    result = rpc_request("getbalance", [address])
-    return result.get("result", 0)
+    # Return balance if exists, else initialize
+    if address not in WALLETS:
+        WALLETS[address] = 500  # default starting balance for testing
+    return WALLETS[address]
 
 def send_panca(from_address, to_address, amount):
-    result = rpc_request("sendtoaddress", [from_address, to_address, amount])
-    return result.get("result", None)
+    if from_address not in WALLETS:
+        WALLETS[from_address] = 500
+    if to_address not in WALLETS:
+        WALLETS[to_address] = 500
+
+    if WALLETS[from_address] >= amount:
+        WALLETS[from_address] -= amount
+        WALLETS[to_address] += amount
+        txid = f"mock_txid_{random.randint(1000,9999)}"
+        return txid
+    else:
+        return None
 
 def get_deposit_address(address):
+    # Simply return the same address for testing
+    if address not in WALLETS:
+        WALLETS[address] = 500
     return address
