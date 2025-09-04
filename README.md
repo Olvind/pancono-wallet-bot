@@ -1,6 +1,6 @@
 # Pancono Wallet Bot
 
-A Pancono blockchain wallet + Telegram bot for Pancono Coin(PANCA).
+A Pancono blockchain wallet + Telegram bot for Pancono Coin PANCA.
 
 ## Setup
 
