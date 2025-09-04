@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
 from wallet_ui import generate_wallet_card
 from referral_system import generate_referral_code, register_referral
 
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = "8463228962:AAGtElNYpkZb3pt4RM_V78VYaoWgjOOQeYY"
 ADMIN_IDS = ["7194082974"]  # Replace with your Telegram ID(s)
 
 def start(update: Update, context: CallbackContext):
