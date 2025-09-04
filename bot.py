@@ -1,70 +1,55 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackContext
-from wallet_ui import generate_wallet_card
-from referral_system import generate_referral_code, register_referral
+import requests
+from telegram.ext import Updater, CommandHandler
 
-TOKEN = "8463228962:AAGtElNYpkZb3pt4RM_V78VYaoWgjOOQeYY"
-ADMIN_IDS = ["7194082974"]  # Replace with your Telegram ID(s)
+RPC_URL = "http://127.0.0.1:8332"
+API_KEY = "supersecret123"  # must match rpc_server.py
 
-def start(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    args = context.args
-    if args:
-        code = args[0]
-        referrer = register_referral(user_id, code)
-        if referrer:
-            update.message.reply_text(f"🎉 You were referred! Referrer ID: {referrer}")
+def rpc_call(method, params=[]):
+    headers = {"X-API-KEY": API_KEY}
+    payload = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+    response = requests.post(RPC_URL, json=payload, headers=headers).json()
+    if "error" in response and response["error"]:
+        return f"❌ Error: {response['error']}"
+    return response["result"]
 
-    referral_code = generate_referral_code(user_id)
-    update.message.reply_text(f"Welcome! Your referral code is: {referral_code}")
+def start(update, context):
+    update.message.reply_text("🚀 Welcome to Pancono Wallet Bot!\n\nCommands:\n/createwallet\n/balance <address>\n/send <from> <to> <amount>\n/mine")
 
-    keyboard = [
-        [InlineKeyboardButton("💰 Check Balance", callback_data="balance")],
-        [InlineKeyboardButton("📤 Send PANCA", callback_data="send")],
-        [InlineKeyboardButton("📥 Deposit PANCA", callback_data="deposit")],
-        [InlineKeyboardButton("🎁 Invite Friends", callback_data="referral")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Choose an action:", reply_markup=reply_markup)
+def create_wallet(update, context):
+    result = rpc_call("getnewaddress")
+    update.message.reply_text(f"🆕 Wallet created:\nAddress: {result['address']}\nPrivate Key: {result['private_key']}")
 
-def wallet_card(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    referral_code = generate_referral_code(user_id)
-    balance = 500  # Example balance, fetch from blockchain later
-    address = "PANCAxxxxxxxx"  # Example, fetch user wallet
-    img_path = generate_wallet_card(address, balance, referral_code)
-    update.message.reply_photo(photo=open(img_path, "rb"))
-
-def admin_dashboard(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    if user_id not in ADMIN_IDS:
-        update.message.reply_text("❌ You are not authorized.")
+def balance(update, context):
+    if len(context.args) == 0:
+        update.message.reply_text("Usage: /balance <address>")
         return
+    result = rpc_call("getbalance", [context.args[0]])
+    update.message.reply_text(f"💰 Balance: {result} PANCA")
 
-    users = get_all_users()
-    msg = f"Total Users: {len(users)}\n\n"
-    for uid, data in users.items():
-        referrals = get_user_referrals(uid)
-        msg += f"UserID: {uid}\nReferrals: {len(referrals)}\n\n"
+def send(update, context):
+    if len(context.args) != 3:
+        update.message.reply_text("Usage: /send <from_addr> <to_addr> <amount>")
+        return
+    from_addr, to_addr, amount = context.args
+    result = rpc_call("sendtoaddress", [from_addr, to_addr, float(amount)])
+    update.message.reply_text(f"✅ Transaction sent:\n{result}")
 
-    update.message.reply_text(msg)
+def mine(update, context):
+    result = rpc_call("generate")
+    update.message.reply_text(f"⛏️ New block mined: {result}")
 
-def my_referrals(update: Update, context: CallbackContext):
-    user_id = str(update.effective_user.id)
-    referrals = get_user_referrals(user_id)
-    if referrals:
-        msg = f"🎯 You have referred {len(referrals)} users:\n"
-        for uid in referrals:
-            msg += f"- {uid}\n"
-    else:
-        msg = "😕 You have not referred anyone yet."
-    update.message.reply_text(msg)
+def main():
+    updater = Updater("YOUR_TELEGRAM_BOT_TOKEN", use_context=True)
+    dp = updater.dispatcher
 
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("createwallet", create_wallet))
+    dp.add_handler(CommandHandler("balance", balance))
+    dp.add_handler(CommandHandler("send", send))
+    dp.add_handler(CommandHandler("mine", mine))
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("wallet", wallet_card))
-app.add_handler(CommandHandler("admin", admin_dashboard))
-app.add_handler(CommandHandler("myreferrals", my_referrals))
+    updater.start_polling()
+    updater.idle()
 
-app.run_polling()
+if __name__ == "__main__":
+    main()
