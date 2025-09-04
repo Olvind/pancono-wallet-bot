@@ -1,10 +1,14 @@
-# Pancono Wallet Bot
+# Pancono Wallet Telegram Bot (Real Blockchain Integration)
 
-A Pancono blockchain wallet + Telegram bot for Pancono Coin PANCA.
+## Features
+- Wallet creation & storage (non-custodial)
+- Real balance retrieval from Pancono node
+- On-chain referral rewards
+- Wallet card with real balances
+- Telegram bot for user interaction
 
 ## Setup
-
-1. Clone repo or upload to GitHub/Replit.
-2. Install deps:
-   ```bash
-   pip install -r requirements.txt
+1. Replace `YOUR_TELEGRAM_BOT_TOKEN_HERE` in `bot.py`.
+2. Replace `SYSTEM_WALLET_ADDRESS` and `SYSTEM_PRIVATE_KEY` in `referral_system.py`.
+3. Replace `RPC_URL` in `rpc.py` with your Pancono node endpoint.
+4. Install dependencies:
