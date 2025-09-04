@@ -17,6 +17,9 @@ def rpc():
             response["result"] = blockchain.send(params[0], params[1], params[2])
         elif method == "createwallet":
             response["result"] = blockchain.create_wallet()
+        elif method == "importwallet":
+            response["result"] = blockchain.import_wallet(params[0])
+
         else:
             response["error"] = "Unknown method"
     except Exception as e:
