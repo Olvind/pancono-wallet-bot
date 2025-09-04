@@ -1,7 +1,11 @@
-import json, os, random, string
+import json
+import os
+import random
+import string
 
 DB_FILE = os.path.join(os.path.dirname(__file__), "database.json")
 
+# Initialize DB
 if not os.path.exists(DB_FILE):
     with open(DB_FILE, "w") as f:
         json.dump({"users": {}, "referrals": {}}, f)
@@ -18,7 +22,9 @@ def generate_referral_code(user_id):
     db = load_db()
     if user_id in db["users"]:
         return db["users"][user_id]["referral_code"]
-    code = ''.join(random.choices(string.ascii_uppercase+string.digits, k=6))
+
+    # Random 6-character code
+    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
     db["users"][user_id] = {"referral_code": code, "balance": 0}
     db["referrals"][code] = []
     save_db(db)
@@ -34,19 +40,9 @@ def register_referral(new_user_id, code):
                 referrer_id = uid
                 break
         if referrer_id:
+            # Reward example: +50 PANCA
             db["users"][referrer_id]["balance"] += 50
             db["users"][new_user_id] = {"referral_code": generate_referral_code(new_user_id), "balance": 50}
         save_db(db)
         return referrer_id
     return None
-
-def get_all_users():
-    db = load_db()
-    return db["users"]
-
-def get_user_referrals(user_id):
-    db = load_db()
-    if user_id in db["users"]:
-        code = db["users"][user_id]["referral_code"]
-        return db["referrals"].get(code, [])
-    return []
