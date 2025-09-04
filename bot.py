@@ -18,9 +18,9 @@ from referral_system import (
 from rpc import check_balance, send_panca, get_deposit_address
 
 # Replace with your bot token
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = "8463228962:AAGtElNYpkZb3pt4RM_V78VYaoWgjOOQeYY"
 # Replace with your Telegram user ID(s) as admin
-ADMIN_IDS = ["123456789"]
+ADMIN_IDS = ["7194082974"]
 
 # States for sending PANCA interactively
 SEND_ADDRESS, SEND_AMOUNT = range(2)
