@@ -1,28 +1,52 @@
-import random, string
+import json, os, random, string
 
-# Simple in-memory storage (replace with DB in production)
-USER_REFERRALS = {}   # user_id -> referral_code
-REFERRAL_TRACK = {}   # referral_code -> list of user_ids
+DB_FILE = os.path.join(os.path.dirname(__file__), "database.json")
+
+if not os.path.exists(DB_FILE):
+    with open(DB_FILE, "w") as f:
+        json.dump({"users": {}, "referrals": {}}, f)
+
+def load_db():
+    with open(DB_FILE, "r") as f:
+        return json.load(f)
+
+def save_db(db):
+    with open(DB_FILE, "w") as f:
+        json.dump(db, f, indent=2)
 
 def generate_referral_code(user_id):
-    """Generate or return existing referral code for a user"""
-    if user_id in USER_REFERRALS:
-        return USER_REFERRALS[user_id]
-    code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    USER_REFERRALS[user_id] = code
-    REFERRAL_TRACK.setdefault(code, [])
+    db = load_db()
+    if user_id in db["users"]:
+        return db["users"][user_id]["referral_code"]
+    code = ''.join(random.choices(string.ascii_uppercase+string.digits, k=6))
+    db["users"][user_id] = {"referral_code": code, "balance": 0}
+    db["referrals"][code] = []
+    save_db(db)
     return code
 
-def register_referral(new_user_id, ref_code):
-    """Register a new user using someone else's referral code"""
-    if ref_code in REFERRAL_TRACK:
-        REFERRAL_TRACK[ref_code].append(new_user_id)
-        # TODO: credit PANCA rewards to referrer
-        return True
-    return False
+def register_referral(new_user_id, code):
+    db = load_db()
+    if code in db["referrals"]:
+        db["referrals"][code].append(new_user_id)
+        referrer_id = None
+        for uid, data in db["users"].items():
+            if data["referral_code"] == code:
+                referrer_id = uid
+                break
+        if referrer_id:
+            db["users"][referrer_id]["balance"] += 50
+            db["users"][new_user_id] = {"referral_code": generate_referral_code(new_user_id), "balance": 50}
+        save_db(db)
+        return referrer_id
+    return None
 
-def get_referral_stats(user_id):
-    """Return number of referrals for this user"""
-    code = USER_REFERRALS.get(user_id)
-    if not code: return 0
-    return len(REFERRAL_TRACK.get(code, []))
+def get_all_users():
+    db = load_db()
+    return db["users"]
+
+def get_user_referrals(user_id):
+    db = load_db()
+    if user_id in db["users"]:
+        code = db["users"][user_id]["referral_code"]
+        return db["referrals"].get(code, [])
+    return []
